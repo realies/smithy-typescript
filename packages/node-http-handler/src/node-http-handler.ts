@@ -95,7 +95,9 @@ export class NodeHttpHandler implements HttpHandler<NodeHttpHandlerOptions> {
 
     if (sockets && requests) {
       for (const origin in sockets) {
-        if (!hasOwn(sockets, origin)) continue;
+        if (!hasOwn(sockets, origin)) {
+          continue;
+        }
         const socketsInUse = sockets[origin]?.length ?? 0;
         const requestsEnqueued = requests[origin]?.length ?? 0;
 
@@ -168,14 +170,12 @@ or increase socketAcquisitionWarningTimeout=(millis) in the NodeHttpHandler conf
       let socketWarningTimeoutId: TimeoutId = -1;
       let connectionTimeoutId: TimeoutId = -1;
       let requestTimeoutId: TimeoutId = -1;
-      let socketTimeoutId: TimeoutId = -1;
       let keepAliveTimeoutId: TimeoutId = -1;
 
       const clearTimeouts = () => {
         timing.clearTimeout(socketWarningTimeoutId);
         timing.clearTimeout(connectionTimeoutId);
         timing.clearTimeout(requestTimeoutId);
-        timing.clearTimeout(socketTimeoutId);
         timing.clearTimeout(keepAliveTimeoutId);
       };
 
@@ -308,10 +308,10 @@ or increase socketAcquisitionWarningTimeout=(millis) in the NodeHttpHandler conf
       // Re-validated here because updateHttpClientConfig can set the untyped option directly.
       const defaultSocketTimeout = config.socketTimeout === undefined ? resolveDefaultSocketTimeout(config) : undefined;
       if (defaultSocketTimeout) {
-        // Service default: fail the body with TimeoutError on a post-headers stall.
-        socketTimeoutId = setSocketTimeout(req, reject, defaultSocketTimeout, true);
+        // Service default: labeled as such in the TimeoutError.
+        setSocketTimeout(req, reject, defaultSocketTimeout, true);
       } else {
-        socketTimeoutId = setSocketTimeout(req, reject, config.socketTimeout);
+        setSocketTimeout(req, reject, config.socketTimeout);
       }
 
       // Workaround for bug report in Node.js https://github.com/nodejs/node/issues/47137
@@ -337,13 +337,19 @@ or increase socketAcquisitionWarningTimeout=(millis) in the NodeHttpHandler conf
   public updateHttpClientConfig(key: keyof NodeHttpHandlerOptions, value: NodeHttpHandlerOptions[typeof key]): void {
     this.config = undefined;
     this.configProvider = this.configProvider.then((config) => {
-      if ((key as unknown) === Symbol.for("logger")) {
-        // A client offers its logger under this key: take it only if this
-        // handler has no logger of its own.
-        return {
-          ...config,
-          logger: config.logger ?? (value as Logger),
-        };
+      switch (key as unknown) {
+        case Symbol.for("logger"):
+          // A client offers its logger under this key: take it only if this
+          // handler has no logger of its own.
+          key = "logger";
+          value = config.logger ?? (value as Logger);
+          break;
+        case Symbol.for("@smithy/defaultSocketTimeout"):
+          // A client offers its service default under this key: take it only if
+          // this handler has no defaultSocketTimeout of its own.
+          key = "defaultSocketTimeout" as typeof key;
+          value = resolveDefaultSocketTimeout(config) ?? (value as number);
+          break;
       }
       return {
         ...config,
@@ -369,6 +375,7 @@ or increase socketAcquisitionWarningTimeout=(millis) in the NodeHttpHandler conf
     } = options || {};
     const keepAlive = true;
     const maxSockets = 50;
+    let httpAgentPromise: Promise<hAgentType> | undefined;
 
     return {
       connectionTimeout,
@@ -377,18 +384,19 @@ or increase socketAcquisitionWarningTimeout=(millis) in the NodeHttpHandler conf
       defaultSocketTimeout: resolveDefaultSocketTimeout(options),
       socketAcquisitionWarningTimeout,
       throwOnRequestTimeout,
-      httpAgentProvider: async () => {
-        const node_http = await import("node:http");
-        const { Agent, request } = node_http.default ?? node_http;
-        hRequest = request;
-        hAgent = Agent;
+      httpAgentProvider: () =>
+        (httpAgentPromise ??= (async () => {
+          const node_http = await import("node:http");
+          const { Agent, request } = node_http.default ?? node_http;
+          hRequest = request;
+          hAgent = Agent;
 
-        if (httpAgent instanceof hAgent || typeof (httpAgent as hAgentType)?.destroy === "function") {
-          this.externalAgent = true;
-          return httpAgent as hAgentType;
-        }
-        return new hAgent({ keepAlive, maxSockets, ...httpAgent });
-      },
+          if (httpAgent instanceof hAgent || typeof (httpAgent as hAgentType)?.destroy === "function") {
+            this.externalAgent = true;
+            return httpAgent as hAgentType;
+          }
+          return new hAgent({ keepAlive, maxSockets, ...httpAgent });
+        })()),
       httpsAgent: (() => {
         if (httpsAgent instanceof node_https.Agent || typeof (httpsAgent as hsAgentType)?.destroy === "function") {
           this.externalAgent = true;

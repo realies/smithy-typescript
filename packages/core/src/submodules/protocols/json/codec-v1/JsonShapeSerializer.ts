@@ -1,6 +1,13 @@
 import { determineTimestampFormat } from "../../serde/determineTimestampFormat";
 import { NormalizedSchema } from "@smithy/core/schema";
-import { dateToUtcString, generateIdempotencyToken, LazyJsonString, NumericValue, toBase64 } from "@smithy/core/serde";
+import {
+  dateToUtcString,
+  generateIdempotencyToken,
+  LazyJsonString,
+  NumericValue,
+  toBase64,
+  writeKey,
+} from "@smithy/core/serde";
 import type {
   DocumentSchema,
   Schema,
@@ -13,7 +20,6 @@ import type {
 import { SerdeContextConfig } from "../../ConfigurableSerdeContext";
 import type { JsonSettings } from "./JsonSettings";
 import { JsonReplacer } from "../jsonReplacer";
-import { writeKey } from "../../writeKey";
 import { hasOwn } from "@smithy/core/transport";
 
 /**
@@ -108,7 +114,9 @@ export class JsonShapeSerializer extends SerdeContextConfig implements ShapeSeri
           // This if-block is for backwards compatibility support and should not be copied
           // to other implementations.
           for (const k in record) {
-            if (!hasOwn(record, k)) continue;
+            if (!hasOwn(record, k)) {
+              continue;
+            }
             const v = record[k];
             const targetKey = jsonName ? (nameMap![k] ?? k) : k;
             if (!(targetKey in out)) {
@@ -137,7 +145,9 @@ export class JsonShapeSerializer extends SerdeContextConfig implements ShapeSeri
         const out = {} as any;
         const sparse = !!ns.getMergedTraits().sparse;
         for (const _k in value as Record<string, unknown>) {
-          if (!hasOwn(value as Record<string, unknown>, _k)) continue;
+          if (!hasOwn(value as Record<string, unknown>, _k)) {
+            continue;
+          }
           const _v = (value as Record<string, unknown>)[_k];
           if (sparse || _v != null) {
             if (_k === "__proto__") {
@@ -222,7 +232,9 @@ export class JsonShapeSerializer extends SerdeContextConfig implements ShapeSeri
 
         const out = Array.isArray(value) ? [] : ({} as any);
         for (const k in value as Record<string, unknown>) {
-          if (!hasOwn(value as Record<string, unknown>, k)) continue;
+          if (!hasOwn(value as Record<string, unknown>, k)) {
+            continue;
+          }
           const v = (value as Record<string, unknown>)[k];
           if (k === "__proto__") {
             writeKey(out);
