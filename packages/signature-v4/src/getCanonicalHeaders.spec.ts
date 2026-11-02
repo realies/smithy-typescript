@@ -1,4 +1,4 @@
-import { hasOwn } from "@smithy/core/transport";
+import { hasOwn } from "@smithy/core/serde";
 import { HttpRequest } from "@smithy/core/protocols";
 import type { HeaderBag } from "@smithy/types";
 import { describe, expect, test as it } from "vitest";
@@ -29,6 +29,20 @@ describe("getCanonicalHeaders", () => {
     });
   });
 
+  it.each(["constructor", "__proto__"])("should canonicalize the %s header", (headerName) => {
+    const headers = Object.create(null) as HeaderBag;
+    headers[headerName] = "value";
+
+    const canonical = getCanonicalHeaders(
+      new HttpRequest({
+        headers,
+      })
+    );
+
+    expect(hasOwn(canonical, headerName)).toBe(true);
+    expect(canonical[headerName]).toBe("value");
+  });
+
   it("should remove all unsignable headers", () => {
     const request = new HttpRequest({
       method: "POST",
@@ -42,7 +56,9 @@ describe("getCanonicalHeaders", () => {
       hostname: "foo.us-east-1.amazonaws.com",
     });
     for (const headerName in ALWAYS_UNSIGNABLE_HEADERS) {
-      if (!hasOwn(ALWAYS_UNSIGNABLE_HEADERS, headerName)) continue;
+      if (!hasOwn(ALWAYS_UNSIGNABLE_HEADERS, headerName)) {
+        continue;
+      }
       request.headers[headerName] = "baz";
     }
 
